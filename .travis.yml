@@ -14,19 +14,21 @@ cache:
 
 env:
   global:
+    - COMPOSER_ALLOW_XDEBUG=0
     - APP_ENV=prod
     - KUBERNETES_ENV=prod
+    - IP="--set ingress.annotations.kubernetes.io/ingress.global-static-ip-name: api-platform-demo-ip"
 
 before_install:
+  - curl https://raw.githubusercontent.com/kubernetes/helm/master/scripts/get | bash -s -- --version v2.9.1;
   - |
-    if [ TRAVIS_BRANCH = "master" ] && [ $TRAVIS_REPO_SLUG = "api-platform/demo" ]; then
-      curl https://raw.githubusercontent.com/kubernetes/helm/master/scripts/get | bash -s -- --version v2.9.1;
-    else
+    if [ TRAVIS_BRANCH != "master" ] || [ $TRAVIS_REPO_SLUG != "api-platform/demo" ]; then
+      IP=""
       KUBERNETES_ENV=staging;
-      exit 0;
     fi
 
 before_script:
+  - phpenv config-rm xdebug.ini
   - sudo service mysql stop
   - sudo service postgresql stop
   - npm install -g react-scripts
@@ -55,6 +57,7 @@ script:
   - curl -k https://localhost:8444
 
 # TODO: Keep looking to https://github.com/kubernetes/kubernetes/pull/64034 tests in order to use "wait" with new implementation (in order to replace sleep 60).
+# For now we let bucket management available in both prod and staging untill ready
 after_success:
   - curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
   - chmod +x ./kubectl
@@ -65,21 +68,19 @@ after_success:
   - gcloud config set project ${PROJECT_NAME}
   - gcloud container clusters get-credentials api-platform-demo --zone europe-west1-c --project ${PROJECT_NAME}
   - helm init --upgrade
-  - kubectl delete namespace $(kubectl get namespaces -l app=api-demo -o jsonpath="{.items[0].metadata.name}" --ignore-not-found) --ignore-not-found
+  - kubectl delete namespace $(kubectl get namespaces -l app=api-demo-${KUBERNETES_ENV} -o jsonpath="{.items[0].metadata.name}" --ignore-not-found) --ignore-not-found
   - helm dependencies update ./api/helm/api
-  - docker build --pull -t eu.gcr.io/${PROJECT_NAME}/php -t eu.gcr.io/${PROJECT_NAME}/php:latest api --target api_platform_php
-  - docker build --pull -t eu.gcr.io/${PROJECT_NAME}/nginx -t eu.gcr.io/${PROJECT_NAME}/nginx:latest api --target api_platform_nginx
-  - docker build --pull -t eu.gcr.io/${PROJECT_NAME}/varnish -t eu.gcr.io/${PROJECT_NAME}/varnish:latest api --target api_platform_varnish
-  - gcloud docker -- push eu.gcr.io/${PROJECT_NAME}/php:latest
-  - gcloud docker -- push eu.gcr.io/${PROJECT_NAME}/nginx:latest
-  - gcloud docker -- push eu.gcr.io/${PROJECT_NAME}/varnish:latest
-  - helm install --wait --namespace=${TRAVIS_COMMIT} ./api/helm/api --set php.repository=eu.gcr.io/${PROJECT_NAME}/php --set nginx.repository=eu.gcr.io/${PROJECT_NAME}/nginx --set varnish.repository=eu.gcr.io/${PROJECT_NAME}/varnish --set secret=${APP_SECRET} --set postgresUser=${DATABASE_USER},postgresPassword="${DATABASE_PASSWORD}",postgresDatabase=${DATABASE_NAME} --set postgresql.persistence.enabled=true --set corsAllowOrigin='*'
+  - docker build --pull -t eu.gcr.io/${PROJECT_NAME}/php-${KUBERNETES_ENV} -t eu.gcr.io/${PROJECT_NAME}/php-${KUBERNETES_ENV}:latest api --target api_platform_php
+  - docker build --pull -t eu.gcr.io/${PROJECT_NAME}/nginx-${KUBERNETES_ENV} -t eu.gcr.io/${PROJECT_NAME}/nginx-${KUBERNETES_ENV}:latest api --target api_platform_nginx
+  - docker build --pull -t eu.gcr.io/${PROJECT_NAME}/varnish-${KUBERNETES_ENV} -t eu.gcr.io/${PROJECT_NAME}/varnish-${KUBERNETES_ENV}:latest api --target api_platform_varnish
+  - gcloud docker -- push eu.gcr.io/${PROJECT_NAME}/php-${KUBERNETES_ENV}:latest
+  - gcloud docker -- push eu.gcr.io/${PROJECT_NAME}/nginx-${KUBERNETES_ENV}:latest
+  - gcloud docker -- push eu.gcr.io/${PROJECT_NAME}/varnish-${KUBERNETES_ENV}:latest
+  - helm install --wait --namespace=${TRAVIS_COMMIT} ./api/helm/api --set php.repository=eu.gcr.io/${PROJECT_NAME}/php-${KUBERNETES_ENV} --set nginx.repository=eu.gcr.io/${PROJECT_NAME}/nginx-${KUBERNETES_ENV} --set varnish.repository=eu.gcr.io/${PROJECT_NAME}/varnish-${KUBERNETES_ENV} --set secret=${APP_SECRET} --set postgresUser=${DATABASE_USER},postgresPassword="${DATABASE_PASSWORD}",postgresDatabase=${DATABASE_NAME} --set postgresql.persistence.enabled=true ${IP}
   - sleep 60
   - kubectl exec -it $(kubectl --namespace=${TRAVIS_COMMIT} get pods -l app=api-php -o jsonpath="{.items[0].metadata.name}") --namespace=${TRAVIS_COMMIT} -- ash -c 'export APP_ENV=dev && composer install -n && bin/console d:s:u --force --env=dev && bin/console hautelook:fixtures:load -n && APP_ENV=prod composer --no-dev install --classmap-authoritative && bin/console d:s:u --env=prod'
-  - kubectl label namespace ${TRAVIS_COMMIT} app=api-demo
-  - cd admin && REACT_APP_API_ENTRYPOINT=http://demo-admin.api-platform.com yarn build --environment=prod
-  - gsutil mb -l europe-west1 -p api-platform-demo gs://demo-admin.api-platform.com
-  - cd admin && gsutil cp -R build/* gs://demo-admin.api-platform.com/build
-  - gsutil iam ch allUsers:objectViewer gs://demo-admin.api-platform.com
-  - gsutil web set -m index.html gs://demo-admin.api-platform.com
+  - kubectl label namespace ${TRAVIS_COMMIT} app=api-demo-${KUBERNETES_ENV}
+  - export REACT_APP_API_ENTRYPOINT_IP=$(kubectl --namespace `echo ${TRAVIS_COMMIT}` get ingress -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
+  - cd admin && yarn && REACT_APP_API_ENTRYPOINT=http://${REACT_APP_API_ENTRYPOINT_IP} yarn build --environment=prod && gsutil rsync -R build gs://demo-admin.les-tilleuls.solutions
+  - cd ../client && yarn && REACT_APP_ADMIN_HOST_HTTP=http://demo-admin.les-tilleuls.solutions REACT_APP_API_HOST_HTTP=http://${REACT_APP_API_ENTRYPOINT_IP}:80 REACT_APP_API_HOST_HTTPS=https://${REACT_APP_API_ENTRYPOINT_IP}:443 yarn build --environment=prod && gsutil rsync -R build gs://demo-client.les-tilleuls.solutions
   - gcloud auth revoke ${TRAVIS_SERVICE_ACCOUNT}

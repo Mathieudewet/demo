@@ -54,11 +54,6 @@ const Welcome = () => (
                             <Api />
                         </div>
                         <div className="other__content">
-                            <h3>API</h3>
-                            <ButtonsGroup
-                                httpLink={API_HOST_HTTP}
-                                httpsLink={API_HOST_HTTPS}
-                            />
                             <h3>Cached API</h3>
                             <ButtonsGroup
                                 httpLink={API_CACHED_HOST_HTTP}
