@@ -29,14 +29,12 @@ before_install:
     fi
 
 before_script:
-  - phpenv config-rm xdebug.ini
   - sudo service mysql stop
   - sudo service postgresql stop
   - npm install -g react-scripts
   - while sudo lsof -Pi :5432 -sTCP:LISTEN -t; do sleep 1; done
 
 script:
-  - phpenv config-rm xdebug.ini
   - docker-compose up -d
   - helm lint api/helm/api/
   - sleep 20
