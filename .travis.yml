@@ -21,6 +21,7 @@ env:
 
 before_install:
   - curl https://raw.githubusercontent.com/kubernetes/helm/master/scripts/get | bash -s -- --version v2.9.1;
+  - sudo apt-get install gcc python-dev python-setuptools && sudo easy_install -U pip && sudo pip uninstall crcmod && sudo pip install -U crcmod
   - |
     if [ TRAVIS_BRANCH != "master" ] || [ $TRAVIS_REPO_SLUG != "api-platform/demo" ]; then
       IP=""
@@ -81,6 +82,6 @@ after_success:
   - kubectl exec -it $(kubectl --namespace=${TRAVIS_COMMIT} get pods -l app=api-php -o jsonpath="{.items[0].metadata.name}") --namespace=${TRAVIS_COMMIT} -- ash -c 'export APP_ENV=dev && composer install -n && bin/console d:s:u --force --env=dev && bin/console hautelook:fixtures:load -n && APP_ENV=prod composer --no-dev install --classmap-authoritative && bin/console d:s:u --env=prod'
   - kubectl label namespace ${TRAVIS_COMMIT} app=api-demo-${KUBERNETES_ENV}
   - export REACT_APP_API_ENTRYPOINT_IP=$(kubectl --namespace `echo ${TRAVIS_COMMIT}` get ingress -o jsonpath='{.items[0].status.loadBalancer.ingress[0].ip}')
-  - cd admin && yarn && REACT_APP_API_ENTRYPOINT=http://${REACT_APP_API_ENTRYPOINT_IP} yarn build --environment=prod && gsutil rsync -R build gs://demo-admin.les-tilleuls.solutions
-  - cd ../client && yarn && REACT_APP_ADMIN_HOST_HTTP=http://demo-admin.les-tilleuls.solutions REACT_APP_API_HOST_HTTP=http://${REACT_APP_API_ENTRYPOINT_IP}:80 REACT_APP_API_HOST_HTTPS=https://${REACT_APP_API_ENTRYPOINT_IP}:443 yarn build --environment=prod && gsutil rsync -R build gs://demo-client.les-tilleuls.solutions
+  - cd admin && yarn && REACT_APP_API_ENTRYPOINT=http://${REACT_APP_API_ENTRYPOINT_IP} yarn build --environment=prod && gsutil -m -o rsync -R build gs://demo-admin.les-tilleuls.solutions
+  - cd ../client && yarn && REACT_APP_ADMIN_HOST_HTTP=http://demo-admin.les-tilleuls.solutions REACT_APP_API_HOST_HTTP=http://${REACT_APP_API_ENTRYPOINT_IP}:80 REACT_APP_API_HOST_HTTPS=https://${REACT_APP_API_ENTRYPOINT_IP}:443 yarn build --environment=prod && gsutil -m -o rsync -R build gs://demo-client.les-tilleuls.solutions
   - gcloud auth revoke ${TRAVIS_SERVICE_ACCOUNT}
