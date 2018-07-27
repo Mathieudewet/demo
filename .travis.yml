@@ -21,7 +21,6 @@ env:
 
 before_install:
   - phpenv config-rm xdebug.ini
-  - sudo php5dismod -s cli xdebug
   - curl https://raw.githubusercontent.com/kubernetes/helm/master/scripts/get | bash -s -- --version v2.9.1;
   - |
     if [ TRAVIS_BRANCH != "master" ] || [ $TRAVIS_REPO_SLUG != "api-platform/demo" ]; then
