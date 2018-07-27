@@ -21,10 +21,6 @@ env:
 
 before_install:
   - curl https://raw.githubusercontent.com/kubernetes/helm/master/scripts/get | bash -s -- --version v2.9.1;
-  - sudo apt-get install gcc python-dev python-setuptools
-  - sudo easy_install -U pip
-  - sudo pip uninstall crcmod
-  - sudo pip install -U crcmod
   - |
     if [ TRAVIS_BRANCH != "master" ] || [ $TRAVIS_REPO_SLUG != "api-platform/demo" ]; then
       IP=""
@@ -39,6 +35,7 @@ before_script:
   - while sudo lsof -Pi :5432 -sTCP:LISTEN -t; do sleep 1; done
 
 script:
+  - phpenv config-rm xdebug.ini
   - docker-compose up -d
   - helm lint api/helm/api/
   - sleep 20
